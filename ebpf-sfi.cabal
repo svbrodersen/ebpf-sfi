@@ -23,6 +23,7 @@ library
     base >=4.14 && <5,
     containers,
     ebpf-tools ==0.2.0.0,
+    ebpf-val,
     text-display,
 
   hs-source-dirs: src
@@ -40,23 +41,17 @@ executable ebpf-sfi
 
   hs-source-dirs: app
   default-language: Haskell2010
-  default-extensions: LambdaCase
 
-test-suite ebpf-val-test
+test-suite ebpf-sfi-test
   import: warnings
-  default-language: Haskell2010
   type: exitcode-stdio-1.0
-  hs-source-dirs: test
   main-is: Spec.hs
-  other-modules:
-    BoundSpec
-    InterpreterSpec
-    WorksetSpec
-
+  hs-source-dirs: test
+  default-language: Haskell2010
   build-depends:
-    array,
     base >=4.14 && <5,
-    containers,
-    ebpf-tools ==0.2.0.0,
-    ebpf-val,
+    ebpf-sfi,
     hspec,
+    ebpf-tools,
+    ebpf-val,
+    containers

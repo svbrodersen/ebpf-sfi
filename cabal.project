@@ -9,5 +9,5 @@ source-repository-package
 
 source-repository-package
     type: git
-    location: https://github.com/svbrodersen/ebpf-val.git
+    location: https://github.com/svbrodersen/ebpf-val.git    
     tag: main
