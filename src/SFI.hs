@@ -1,6 +1,7 @@
 module SFI where
 
 import Data.List (sortOn)
+import Debug.Trace (trace)
 import Ebpf.Asm
 import Ebpf.Display ()
 import Ebpf_cfg
@@ -9,7 +10,7 @@ import Prelude
 type GraphList = [(Label, Trans, Label)]
 
 getLabel :: CodeOffset -> Int -> Int
-getLabel off l = fromIntegral off + l + 1
+getLabel off l = fromIntegral off + l
 
 checkPrerequisite :: ((Int, Instruction) -> Bool) -> LabeledProgram -> Maybe ()
 checkPrerequisite p lprog =
@@ -23,7 +24,8 @@ checkRegisterUse lprog registers = checkPrerequisite checkInst lprog
   checkInst (_, inst) = case inst of
     Binary _ _ reg' _ -> checkReg reg'
     Unary _ _ reg' -> checkReg reg'
-    Store _ reg' _ _ -> checkReg reg'
+    -- Store just stores at the memory location of reg, so we don't have to do anything
+    Store{} -> False
     Load _ reg' _ _ -> checkReg reg'
     LoadImm reg' _ -> checkReg reg'
     LoadMapFd reg' _ -> checkReg reg'
@@ -72,14 +74,39 @@ sfiAlgorithm lprog = do
          in case curr' of
               (Store _ dst off _) -> do
                 -- In store we want to guard the destination
-                (newProg, newCurr) <- handleMemloc l dst off
+                (newProg', newCurr) <- handleMemloc l dst off
+                -- After adding the guard, we now replace Reg and off with reg 11
+                newProg <- handleStore newProg' newCurr
                 sfiAlgorithm' newProg (newCurr + 1)
               (Load _ _ src off) -> do
                 -- In load we want to guard the source
-                (newProg, newCurr) <- handleMemloc l src off
+                (newProg', newCurr) <- handleMemloc l src off
+                newProg <- handleLoad newProg' newCurr
                 sfiAlgorithm' newProg (newCurr + 1)
               _ -> sfiAlgorithm' lprog' (curr + 1)
    where
+    handleStore :: LabeledProgram -> Label -> Maybe LabeledProgram
+    handleStore [] _ = Just []
+    handleStore ((k, i@(Store s _ _ regimm)) : is) curr'
+      | k == curr' = Just $ (k, Store s (Reg 11) Nothing regimm) : is
+      | otherwise = do
+          is' <- handleStore is curr'
+          Just $ (k, i) : is'
+    handleStore (i : is) curr' = do
+      is' <- handleStore is curr'
+      Just $ i : is'
+    handleLoad :: LabeledProgram -> Label -> Maybe LabeledProgram
+    handleLoad [] _ = Just []
+    handleLoad ((k, i@(Load s dst _ _)) : is) curr'
+      -- Here we instead load into same destination, but from Reg 11 with no offset
+      | k == curr' = Just $ (k, Load s dst (Reg 11) Nothing) : is
+      | otherwise = do
+          is' <- handleLoad is curr'
+          Just $ (k, i) : is'
+    handleLoad (i : is) curr' = do
+      is' <- handleLoad is curr'
+      Just $ i : is'
+
     -- Get guard uses the old l as the start. That way we don't have to update any jumps, as we want them to jump to the start of the guard anyhow.
     getGuard l reg (Just off) =
       let ourReg = Reg 11
@@ -135,7 +162,7 @@ sfiAlgorithm lprog = do
             | otherwise = off
           newInstr = case instr of
             JCond cmp reg regimm _ ->
-              JCond cmp reg regimm (fromIntegral newTarget)
+              trace ("l': " ++ show l' ++ " l: " ++ show l ++ " n: " ++ show n) $ JCond cmp reg regimm (fromIntegral newTarget)
             Jmp _ ->
               Jmp (fromIntegral newTarget)
             i -> i
