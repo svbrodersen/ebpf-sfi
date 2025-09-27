@@ -162,7 +162,7 @@ sfiAlgorithm lprog = do
             | otherwise = off
           newInstr = case instr of
             JCond cmp reg regimm _ ->
-              trace ("l': " ++ show l' ++ " l: " ++ show l ++ " n: " ++ show n) $ JCond cmp reg regimm (fromIntegral newTarget)
+              JCond cmp reg regimm (fromIntegral newTarget)
             Jmp _ ->
               Jmp (fromIntegral newTarget)
             i -> i
