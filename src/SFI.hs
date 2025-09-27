@@ -51,8 +51,8 @@ checkJumpInstructions lprog = checkPrerequisite checkInst lprog
 
 checkPrerequisites :: LabeledProgram -> Maybe ()
 checkPrerequisites lprog = do
-  -- Registers 1,2,10 are restricted by definition of the assignment. register 11 is used for guards
-  _ <- checkRegisterUse lprog [1, 2, 10, 11]
+  -- Registers 1,2,10 are restricted by definition of the assignment. register 9, 11 is used for guards
+  _ <- checkRegisterUse lprog [1, 2, 9, 10, 11]
   _ <- checkJumpInstructions lprog
   -- Now that we have a program that is nice, we can just return
   return ()
@@ -72,75 +72,106 @@ sfiAlgorithm lprog = do
       else
         let (l, curr') = lprog' !! curr
          in case curr' of
-              (Store _ dst off _) -> do
+              i@(Store _ dst off _) -> do
                 -- In store we want to guard the destination
-                (newProg', newCurr) <- handleMemloc l dst off
+                (newProg, newCurr) <- handleMemloc l dst off i
                 -- After adding the guard, we now replace Reg and off with reg 11
-                newProg <- handleStore newProg' newCurr
                 sfiAlgorithm' newProg (newCurr + 1)
-              (Load _ _ src off) -> do
+              i@(Load _ _ src off) -> do
                 -- In load we want to guard the source
-                (newProg', newCurr) <- handleMemloc l src off
-                newProg <- handleLoad newProg' newCurr
-                sfiAlgorithm' newProg (newCurr + 1)
-              _ -> sfiAlgorithm' lprog' (curr + 1)
+                (newProg, newCurr) <- handleMemloc l src off i
+                trace ("newProg: " ++ show newProg) $ sfiAlgorithm' newProg (newCurr + 1)
+              i -> trace ("No call: " ++ show i) $ sfiAlgorithm' lprog' (curr + 1)
    where
-    handleStore :: LabeledProgram -> Label -> Maybe LabeledProgram
-    handleStore [] _ = Just []
-    handleStore ((k, i@(Store s _ _ regimm)) : is) curr'
-      | k == curr' = Just $ (k, Store s (Reg 11) Nothing regimm) : is
-      | otherwise = do
-          is' <- handleStore is curr'
-          Just $ (k, i) : is'
-    handleStore (i : is) curr' = do
-      is' <- handleStore is curr'
-      Just $ i : is'
-    handleLoad :: LabeledProgram -> Label -> Maybe LabeledProgram
-    handleLoad [] _ = Just []
-    handleLoad ((k, i@(Load s dst _ _)) : is) curr'
-      -- Here we instead load into same destination, but from Reg 11 with no offset
-      | k == curr' = Just $ (k, Load s dst (Reg 11) Nothing) : is
-      | otherwise = do
-          is' <- handleLoad is curr'
-          Just $ (k, i) : is'
-    handleLoad (i : is) curr' = do
-      is' <- handleLoad is curr'
-      Just $ i : is'
+    handleInstructionGuard l' newReg (Store s _ _ regimm) =
+      (l', Store s newReg Nothing regimm)
+    handleInstructionGuard l' newReg (Load s dst _ _) =
+      (l', Load s dst newReg Nothing)
+    handleInstructionGuard l' _ _ =
+      -- This case should never happen
+      (l', Exit)
 
     -- Get guard uses the old l as the start. That way we don't have to update any jumps, as we want them to jump to the start of the guard anyhow.
-    getGuard l reg (Just off) =
-      let ourReg = Reg 11
-       in [ -- Move current value to r11, our controlled register
-            (l, Binary B64 Mov ourReg (R reg))
-          , -- subtract r1 from value
-            (l + 1, Binary B64 Sub ourReg (R (Reg 1)))
+    getGuard l reg (Just off) i =
+      let r11 = Reg 11
+          r9 = Reg 9
+          r10 = Reg 10
+          r1 = Reg 1
+          r2 = Reg 2
+       in [ -- Move current value to r9
+            (l, Binary B64 Mov r9 (R reg))
           , -- Add the offset
-            (l + 2, Binary B64 Add ourReg (Imm off))
-          , -- And with r2, which has been sub 1 to get FFFFF for some value that is a power of 2
-            (l + 3, Binary B64 And ourReg (R (Reg 2)))
-          , -- Add back r1, such that we are within [r1, r1 + r2), instead of [0, r2)
-            (l + 4, Binary B64 Add ourReg (R (Reg 1)))
+            (l + 1, Binary B64 Add r9 (Imm off))
+          , -- Copy the result after offset in r11
+            (l + 2, Binary B64 Mov r11 (R r9))
+          , -- subtract r10 from value
+            (l + 3, Binary B64 Sub r9 (R r10))
+          , -- And with 511
+            (l + 4, Binary B64 And r9 (Imm 511))
+          , -- Add back r10, so we go from [0, 511] to [r10, r10 + 511]
+            (l + 5, Binary B64 Add r9 (R r10))
+          , -- if there is no difference between this and the value in r11, then this memory location is between [r10, r10 + 512),
+            -- So we insert a jump to jump over the next guard. The jump is 5,
+            (l + 6, JCond Jeq r9 (R r11) 6)
+          , (l + 7, Binary B64 Sub r11 (R r1))
+          , -- And with 511
+            (l + 8, Binary B64 And r11 (R r2))
+          , -- Add back r10, so we go from [0, 511] to [r10, r10 + 511]
+            (l + 9, Binary B64 Add r11 (R r1))
+          , -- Now we change the original instruction to be with r11
+            handleInstructionGuard (l + 10) r11 i
+          , (l + 11, Jmp 2)
+          , -- This is where we jump to, if we found that r9 and r11 were the same before.
+            handleInstructionGuard (l + 12) r9 i
           ]
-    getGuard l reg Nothing =
-      let ourReg = Reg 11
-       in [ -- Move current value to r11, our controlled register
-            (l, Binary B64 Mov ourReg (R reg))
-          , -- subtract r1 from the value
-            (l + 1, Binary B64 Sub ourReg (R (Reg 1)))
-          , -- And with r2, which has been sub 1 to get FFFFF for some value that is a power of 2
-            (l + 2, Binary B64 And ourReg (R (Reg 2)))
-          , -- Add back r1, such that we are within [r1, r1 + r2), instead of [0, r2)
-            (l + 3, Binary B64 Add ourReg (R (Reg 1)))
+    getGuard l reg Nothing i =
+      let r11 = Reg 11
+          r9 = Reg 9
+          r10 = Reg 10
+          r1 = Reg 1
+          r2 = Reg 2
+       in [ -- Move current value to r9
+            (l, Binary B64 Mov r9 (R reg))
+          , -- Copy to r11
+            (l + 1, Binary B64 Mov r11 (R r9))
+          , -- subtract r10 from value
+            (l + 2, Binary B64 Sub r9 (R r10))
+          , -- And with 511
+            (l + 3, Binary B64 And r9 (Imm 511))
+          , -- Add back r10, so we go from [0, 511] to [r10, r10 + 511]
+            (l + 4, Binary B64 Add r9 (R r10))
+          , -- if there is no difference between this and the value in r11, then this memory location is between [r10, r10 + 512),
+            -- So we insert a jump to jump over the next guard. The jump is 5,
+            (l + 5, JCond Jeq r9 (R r11) 6)
+          , (l + 6, Binary B64 Sub r11 (R r1))
+          , -- And with 511
+            (l + 7, Binary B64 And r11 (R r2))
+          , -- Add back r10, so we go from [0, 511] to [r10, r10 + 511]
+            (l + 8, Binary B64 Add r11 (R r1))
+          , -- Now we change the original instruction to be with r11
+            handleInstructionGuard (l + 9) r11 i
+          , (l + 10, Jmp 2)
+          , -- This is where we jump to, if we found that r9 and r11 were the same before.
+            handleInstructionGuard (l + 11) r9 i
           ]
+    removeLabel _ [] = []
+    removeLabel l ((k, x) : xs)
+      | l == k = xs
+      | otherwise = (k, x) : removeLabel l xs
 
-    handleMemloc :: Label -> Reg -> Maybe MemoryOffset -> Maybe (LabeledProgram, Int)
-    handleMemloc l reg off =
-      let guard = getGuard l reg off
-          fixedProg = newLabels (length guard) l
+    handleMemloc :: Label -> Reg -> Maybe MemoryOffset -> Instruction -> Maybe (LabeledProgram, Int)
+    handleMemloc l reg off i =
+      -- First create the guard
+      let guard = getGuard l reg off i
+          -- Remove the original possibly offending statement
+          lprog'' = removeLabel l lprog'
+          -- Increment all labels, and make sure our jumps are correct
+          fixedProg = newLabels (length guard) l lprog''
+          -- Add the guard to the program, and then sort
           newProg = sortOn fst (fixedProg ++ guard)
-       in Just (newProg, l + length guard)
-    newLabels :: Int -> Label -> LabeledProgram
-    newLabels len l = map (updateLabel l len) lprog'
+       in Just (newProg, l + length guard - 1)
+    newLabels :: Int -> Label -> LabeledProgram -> LabeledProgram
+    newLabels len l = map (updateLabel l len)
     updateLabel :: Label -> Int -> (Int, Instruction) -> (Int, Instruction)
     updateLabel l len (l', instr) =
       -- n is the label the instr wants to jump to (in case of jump)
@@ -156,8 +187,8 @@ sfiAlgorithm lprog = do
             -- Also Also, in the case we are jumping from somewhere after, we
             -- want to update it to instead jump to the guard. This is why n ==
             -- l is included in the n <=.
-            | n <= l && l' >= l = off - fromIntegral len
-            | n > l && l' <= l = off + fromIntegral len
+            | n <= l && l' >= l = off - (fromIntegral len - 1)
+            | n > l && l' <= l = off + (fromIntegral len - 1)
             -- Otherwise, the guard changes nothing.
             | otherwise = off
           newInstr = case instr of
@@ -166,4 +197,4 @@ sfiAlgorithm lprog = do
             Jmp _ ->
               Jmp (fromIntegral newTarget)
             i -> i
-       in (if l' >= l then l' + len else l', newInstr)
+       in (if l' >= l then l' + len - 1 else l', newInstr)
