@@ -1,3 +1,4 @@
+sub64 r2, 1
 mov64 r3, 10
 jeq r3, 0, +14
 mov64 r9, r3

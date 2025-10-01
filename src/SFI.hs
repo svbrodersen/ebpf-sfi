@@ -57,20 +57,28 @@ checkPrerequisites lprog = do
   -- Now that we have a program that is nice, we can just return
   return ()
 
+-- Subtracts 1 from r2, as r2 is a power of 2
+insertR2Sub :: LabeledProgram -> Maybe LabeledProgram
+insertR2Sub lprog =
+  let lprog' = map (\(i, x) -> (i + 1, x)) lprog
+      r2Instr = (0, Binary B64 Sub (Reg 2) (Imm 1))
+   in Just $ r2Instr : lprog'
+
 -- Require that r2 is a power of 2.
 -- First we subtract 1 from r2, then we can use it as & r2
 sfiAlgorithm :: LabeledProgram -> Maybe Program
-sfiAlgorithm lprog = do
-  _ <- checkPrerequisites lprog
+sfiAlgorithm lprog' = do
+  _ <- checkPrerequisites lprog'
+  lprog <- insertR2Sub lprog'
   newProgram <- sfiAlgorithm' lprog 0
   Just $ map snd newProgram
  where
   sfiAlgorithm' :: LabeledProgram -> Int -> Maybe LabeledProgram
-  sfiAlgorithm' lprog' curr =
-    if curr >= length lprog'
-      then Just lprog'
+  sfiAlgorithm' cur_prog curr =
+    if curr >= length cur_prog
+      then Just cur_prog
       else
-        let (l, curr') = lprog' !! curr
+        let (l, curr') = cur_prog !! curr
          in case curr' of
               i@(Store _ dst off _) -> do
                 -- In store we want to guard the destination
@@ -81,7 +89,7 @@ sfiAlgorithm lprog = do
                 -- In load we want to guard the source
                 (newProg, newCurr) <- handleMemloc l src off i
                 trace ("newProg: " ++ show newProg) $ sfiAlgorithm' newProg (newCurr + 1)
-              i -> trace ("No call: " ++ show i) $ sfiAlgorithm' lprog' (curr + 1)
+              i -> trace ("No call: " ++ show i) $ sfiAlgorithm' cur_prog (curr + 1)
    where
     handleInstructionGuard l' newReg (Store s _ _ regimm) =
       (l', Store s newReg Nothing regimm)
@@ -164,7 +172,7 @@ sfiAlgorithm lprog = do
       -- First create the guard
       let guard = getGuard l reg off i
           -- Remove the original possibly offending statement
-          lprog'' = removeLabel l lprog'
+          lprog'' = removeLabel l cur_prog
           -- Increment all labels, and make sure our jumps are correct
           fixedProg = newLabels (length guard) l lprog''
           -- Add the guard to the program, and then sort
