@@ -194,6 +194,12 @@ INPUT /home/simon/.texlive2023/texmf-var/luatex-cache/generic/fonts/otl/lmmono8-
 INPUT /home/simon/.texlive2023/texmf-var/luatex-cache/generic/fonts/otl/lmroman8-regular.luc
 INPUT ./sections/implementation.tex
 INPUT ./sections/implementation.tex
+INPUT /usr/share/texlive/texmf-dist/tex/latex/listings/lstlang1.sty
+INPUT /usr/share/texlive/texmf-dist/tex/latex/listings/lstlang1.sty
+INPUT /usr/share/texlive/texmf-dist/tex/latex/listings/lstlang2.sty
+INPUT /usr/share/texlive/texmf-dist/tex/latex/listings/lstlang2.sty
+INPUT /home/simon/.texlive2023/texmf-var/luatex-cache/generic/fonts/otl/lmmonolt10-bold.luc
+INPUT /home/simon/.texlive2023/texmf-var/luatex-cache/generic/fonts/otl/lmmono10-italic.luc
 INPUT ./sections/validation.tex
 INPUT ./sections/validation.tex
 INPUT ./sections/discussion.tex
