@@ -51,4 +51,99 @@ prerequisites return \texttt{Nothing}, then the entire function simply returns
 \texttt{Nothing}.
 
 \subsection{SFI Policy Algorithm}
+\begin{lstlisting}[language={haskell}, caption={SFI algorithm}, label={lst:sfi}]
+sfiAlgorithm' :: LabeledProgram -> Int -> Maybe LabeledProgram
+sfiAlgorithm' cur_prog curr =
+  if curr >= length cur_prog
+    then Just cur_prog
+    else
+      let (l, curr') = cur_prog !! curr
+       in case curr' of
+            i@(Store _ dst off _) -> do
+              -- In store we want to guard the destination
+              (newProg, newCurr) <- handleMemloc l dst off i
+              -- After adding the guard, we now replace Reg and off with reg 11
+              sfiAlgorithm' newProg (newCurr + 1)
+            i@(Load _ _ src off) -> do
+              -- In load we want to guard the source
+              (newProg, newCurr) <- handleMemloc l src off i
+              sfiAlgorithm' newProg (newCurr + 1)
+            _ -> sfiAlgorithm' cur_prog (curr + 1)
+    where
+    ...
+    handleMemloc :: Label -> Reg -> Maybe MemoryOffset -> Instruction -> Maybe (LabeledProgram, Int)
+    handleMemloc l reg off i =
+      -- First create the guard
+      let guard = getGuard l reg off i
+          -- Remove the original possibly offending statement
+          lprog'' = removeLabel l cur_prog
+          -- Increment all labels, and make sure our jumps are correct
+          fixedProg = newLabels (length guard) l lprog''
+          -- Add the guard to the program, and then sort
+          newProg = sortOn fst (fixedProg ++ guard)
+       in Just (newProg, l + length guard - 1)
 
+    newLabels :: Int -> Label -> LabeledProgram -> LabeledProgram
+    newLabels len l = map (updateLabel l len)
+    updateLabel :: Label -> Int -> (Int, Instruction) -> (Int, Instruction)
+    updateLabel l len (l', instr) =
+      -- n is the label the instr wants to jump to (in case of jump)
+      let (n, off) = case instr of
+            JCond _ _ _ code -> (getLabel code l', code)
+            Jmp code -> (getLabel code l', code)
+            _ -> (0, 0) -- dummy, won't be used
+            -- New target for jump instructions
+          newTarget
+            -- If we were jumping over the current label, then we now have to
+            -- take the guard into account. (Also irrelevant to use >=, as the
+            -- current l witll never be a jump anyhow.)
+            -- Also Also, in the case we are jumping from somewhere after, we
+            -- want to update it to instead jump to the guard. This is why n ==
+            -- l is included in the n <=.
+            | n <= l && l' >= l = off - (fromIntegral len - 1)
+            | n > l && l' <= l = off + (fromIntegral len - 1)
+            -- Otherwise, the guard changes nothing.
+            | otherwise = off
+          newInstr = case instr of
+            JCond cmp reg regimm _ ->
+              JCond cmp reg regimm (fromIntegral newTarget)
+            Jmp _ ->
+              Jmp (fromIntegral newTarget)
+            i -> i
+       in (if l' >= l then l' + len - 1 else l', newInstr)
+\end{lstlisting}
+The SFI implementation I used is the one mention in Section~\ref{sec:address}.
+After we have checked all prerequisites our goal is now to guard all memory
+accesses to the specified regions.
+
+The general SFI algorithm can be seen in Listing~\ref{lst:sfi}. We recursively
+go through the labeled program and if we ever find a load or store operation
+(the only two statements involving memory access), then we handle them via
+\texttt{handleMemloc}. This function returns a new program, and the next
+instruction we have to check. The function follows the general structure:
+
+\begin{itemize}
+  \item First, get the statements that replace the current load or store
+    statement. These include the arithmetic in Section~\ref{sec:address}, and
+    they also replace the current instruction to instead use our designated
+    registers r11 and r9.
+  \item Then we remove the current statement from the original program.
+  \item We then update all labels in the program. Any label that would have
+    come after the original statement has to be incremented by the length of
+    the guard we are inserting\footnote{This guard length depends on whether or
+    not we have an offset or not. Without an offset, we can save an
+  instruction.}. Now all the labels that are in the guard can not be found in
+  the original program, and so we are able to insert the guard list of
+  statements and sort the labeled program on the Labels to get the new program.
+  \item We do not want our sfi algorithm to run on these new inserted
+    statements, so we update what label should be checked next to be the
+    original label plus the length of the guard minus 1. This gives us the
+    label that is right after the original statement in the original program.
+\end{itemize}
+
+The \texttt{newLabels} function does the majority of the work here. It both has
+to update the current label of all the statement, but it also has to update all
+jump instructions to jump to the new locations. Importantly, we want every jump
+that jumped to the original load/store instruction to now jump to the start of
+our guard, such that we always guarantee that any load adheres to the SFI
+policy.

@@ -1,1 +1,64 @@
-% Discuss why not use naive approach first, and then force address masking. Want to reduce the conditional jumps.
+% Discuss why not use naive approach first, and then force address masking.
+% Want to reduce the conditional jumps.
+\section{Discussion} \subsection{Combining approaches} In
+Section~\ref{sec:introduction} I presented the two main approaches I found
+viable for the task at hand. However, as I worked with the project I started to
+wonder whether they had to be separated at all. The naive approach would
+include 4 conditional jumps, but the total number of instructions would be
+smaller than the one seen in the address masking approach. With the large
+amount of conditional jumps it seems trivial that the address masking is
+better, but in the address masking we are still forced to have a single
+conditional jump, such that we can check the two separate regions. If instead
+we used a combination of the two, where we might initially check if the data is
+in the region of $[r1,r1 + r2)$ and then afterward force the value to be
+between $[r10, r10 + 512)$, then we could do this with two conditional jumps,
+but fewer instructions than in the full address masking approach. With this
+approach I would only need to claim a single register for the guard
+instructions and we would also not require that r2 is some power of 2. Looking
+back this approach might have been better, but it depends on how much more
+expensive the conditional branches are than the instructions I use to replace
+them. With specific knowledge on the branch protector one might have a better
+way of arguing which of the two approaches is preferred.
+
+\subsection{Optimisations} \subsubsection{Value analysis} Previously in the SOS
+course we worked with value analysis, something which I initially thought I
+would use in this project. The idea would be to do an initial run of the value
+analysis on the program, and then we might be able to save guard instructions
+in locations where we know we only reach safe memory regions. However, with the
+current implementation of value analysis this is not possible. Although, we
+might be able to say that some memory load would be in the interval of $[0,
+120]$, we would not know beforehand if that is in the regions of $[r1, r1+r2)$
+and $[r10, r10+512)$
+
+For this to work the intervals would have to be in regards to the registers r1,
+r2 and r10, such that we could tell if any memory load is in the correct
+region, but this is not possible. For the value analysis we need an ordering of
+the elements for a vast majority of the computations. For instance, what would
+be the maximum of 120 and r10? Without information on r10 this is undecidable,
+and as such value analysis can not help us in this instance.
+
+However there is one place the value analysis could help us. The value analysis
+could find memory access that are guaranteed to be outside the data regions.
+Lets say that we know $[r1,r1 + r2)$ is some subset of $[0, 0xFFFF]$, and same
+for the r10 interval. Then if we find that some instruction would attempt to
+read from memory location $oxFFFFF$, we would know this is not allowed. To
+satisfy SFI policy, we could either let the program run and address mask the
+offending instruction instantly (i.e. force it to either the interval $[r1,
+r1+r2)$ or $[r10, r10+512)$ without the conditional jump from
+Section~\ref{sec:address}), or we could simply state that we have violated some
+precondition and refuse to ever run the program. 
+
+\subsection{Reducing repetition} One approach that could be implemented in
+reducing the number of repetition. If we know that we have just inserted a
+guard which checks that some memory region x satisfies our SFI policy, then if
+we attempt to write to x again, then we would not need to add another set of
+guard instructions to the second store instruction. While this seems easy in
+practise, there are some subtleties we have to keep in mind. If we have some
+statement z, then we would have to check all possible paths to z and determine
+that x satisfies the SFI policy already. That is, even though the previous
+instruction might have guaranteed that x satisfies the SFI policy, then we have
+to make sure there does not exist some jump to statement z for which x could
+violate the SFI policy. If there is a single case where this is possible, then
+we would somehow have to either guard this one path, or we would have to insert
+the general guard as in my implementation. 
+

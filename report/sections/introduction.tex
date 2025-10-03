@@ -60,7 +60,7 @@ registers.
 However, as this approach uses more conditional jumps than I would like I
 decided to move on from it and instead use the next approach.
 
-\subsection{Address masking}
+\subsection{Address masking}\label{sec:address}
 Address masking as presented in \cite{SFI} would require that we impose
 restrictions on r1, r2 and r10. Namely we would have to impose that r2 is some
 power of two, and we have to impose that r1 fits in the upper bits of r2, i.e
