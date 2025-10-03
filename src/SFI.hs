@@ -88,8 +88,8 @@ sfiAlgorithm lprog' = do
               i@(Load _ _ src off) -> do
                 -- In load we want to guard the source
                 (newProg, newCurr) <- handleMemloc l src off i
-                trace ("newProg: " ++ show newProg) $ sfiAlgorithm' newProg (newCurr + 1)
-              i -> trace ("No call: " ++ show i) $ sfiAlgorithm' cur_prog (curr + 1)
+                sfiAlgorithm' newProg (newCurr + 1)
+              _ -> sfiAlgorithm' cur_prog (curr + 1)
    where
     handleInstructionGuard l' newReg (Store s _ _ regimm) =
       (l', Store s newReg Nothing regimm)

@@ -1,4 +1,4 @@
-\section{Introduction}
+\section{Introduction}\label{sec:introduction}
 The SFI policy has two main stipulates. First, any memory access must lie in
 either the interval of $[r1, r1 + r2)$ or $[r10, r10+512]$. Second, all
 branches must be to the code region where the eBPF code is loaded.
@@ -98,3 +98,39 @@ applied, I found that this was too imposing on the data region. As such, I have
 decided instead only to impose that r2 should be a power of 2. Together with
 this I require that r9 and r11 are not used as in the naive approach. This
 allows us to rewrite the previous instruction as seen in Listing~\ref{lst:mask}.
+
+This approach includes an initial statement to every program. This is the
+statement $r2 := r2 - 1$. As a prerequisite we have that r2 must be a power of
+2, and as such this instruction makes it such that r2 now contains a mask. For
+example, if we had: $0x1000$, then after this statement we would have $0xFFF$.
+
+Next, as in the naive approach, we compute the memory location into a
+designated register, r9 in this case. Then we copy the value into register r11,
+before forcing r9 to be in the interval of [r10 + 512). We force this as by:
+
+First, subtract r10 from r9. For this operation we have two cases that are
+important for us: 
+\begin{itemize}
+  \item If r9 was already in the aforementioned interval, then subtracting r10
+    from r9 makes it such that r9 is instead in the interval [0, 512), the
+    following AND operation would then have no affect on r9, and we then add
+    back r10, which leaves us with the original value.
+  \item If instead r9 is outside the initial interval, then this operation
+    produces some arbitrary value x, for which the next AND instruction forces
+    to be in the interval [0, 512). Then we add back r10, leaving us with some
+    different value x', which is in the interval [r10, r10 + 512).
+\end{itemize}
+
+Note for this masking to work, we can see that 512 is already a power of 2 as
+before, and we subtract 1 (for the same reason as with r2) to get the address
+mask.
+
+Now we guarantee that r9 has a value in the interval [r10, r10 + 512). However,
+we do not know if this is because the original value was already within this
+region or if we forced it within the region. As we saved the original value in
+r11, we must then do a conditional jump between the two registers, and if we
+see that the value was not changed, then the read already satisfied SFI policy,
+and we execute the memory operation with r9. In the case that r9 was changed,
+then we instead do the same computation for r11, and force the memory read to
+be in the interval of [r1, r1+r2). This time we do not check if we kept the
+original value, as we just want it to be within the allowed regions.

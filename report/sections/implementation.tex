@@ -1,0 +1,54 @@
+\section{Implementation}
+\subsection{Prerequisite}
+\begin{lstlisting}[language={haskell}, caption={Cheking prerequisites}, label={lst:pre}, escapechar=@]
+checkPrerequisite :: ((Int, Instruction) -> Bool) -> LabeledProgram -> Maybe ()
+checkPrerequisite p lprog =
+  let res = any p lprog
+   in (if res then Nothing else Just ())
+
+-- Example use case for checking jump instructions.
+checkJumpInstructions :: LabeledProgram -> Maybe ()
+checkJumpInstructions lprog = checkPrerequisite checkInst lprog
+ where
+  checkInst (l, instr) = case instr of
+    JCond _ _ _ off -> checkJump off l
+    Jmp off -> checkJump off l
+    -- Do not allow any calls to extern
+    (Call _) -> True
+    _ -> False
+  checkJump off l =
+    let
+      res = all (\(i', _) -> i' == getLabel off l) lprog @\label{line:res}@
+     in
+      not res
+
+checkPrerequisites :: LabeledProgram -> Maybe ()
+checkPrerequisites lprog = do
+  -- Registers 1,2,10 are restricted by definition of the assignment. register 9, 11 is used for guards
+  _ <- checkRegisterUse lprog [1, 2, 9, 10, 11]
+  _ <- checkJumpInstructions lprog
+  -- Now that we have a program that is nice, we can just return
+  return ()
+\end{lstlisting}
+
+The first item of the implementation is checking the prerequisites mentioned in
+Section~\ref{sec:introduction}. For this I defined the helper function
+\texttt{checkPrerequisite}, which can be seen in Listing~\ref{lst:pre}. The
+function simply checks if the predicate is true for any of the statements in
+the program. If it is, then we return \texttt{Nothing}, otherwise we return \texttt{Just ()}.
+
+An example of the use case is the \texttt{checkJumpInstructions}. Within this
+function, we define the predicate \texttt{checkInst}. If we have a jump
+condition, then we have to check if there exists some other label in the
+labeled program, which starts with the location we are attempting to jump to
+(the \texttt{getLabel} takes the offset and the current label, and calculates
+the label we would jump to). If the jump is illegal, then res would be False on
+line~\ref{line:res}, so we negate res and return.
+
+With this, we can use the functions with the do notation of the Maybe monad as
+seen in \texttt{checkPrerequisites} in Listing~\ref{lst:pre}. If any of the
+prerequisites return \texttt{Nothing}, then the entire function simply returns
+\texttt{Nothing}.
+
+\subsection{SFI Policy Algorithm}
+
