@@ -1,1 +1,30 @@
-\section{Conclusion}
+\section{Conclusion}\label{sec:conclusion}
+
+In this project, I have designed and implemented a Software Fault Isolation
+(SFI) policy for eBPF bytecode. The central goal was to enforce memory and
+control-flow safety by rewriting eBPF programs to ensure all memory accesses
+are confined to designated regions - a stack space and a data region - and that
+all jumps are local to code within the program.
+
+My implementation, developed in Haskell, first performs a prerequisite check on
+the eBPF program. This static pass verifies that there is no use of reserved
+registers are not used, and that all control-flow transfers (jumps) are
+directed within the program's boundaries. Following this validation, the core
+of my approach involves traversing the program and replacing each memory load
+and store instruction with a sequence of guard instructions. I settled on an
+address masking technique, which, despite requiring `r2` to be a power of two,
+was chosen over a more naive approach to reduce the overhead of conditional
+jumps. This technique forces every memory access into a valid region using
+bitwise operations, with a single conditional jump to select between the stack
+and data regions.
+
+The discussion highlighted several alternative designs and potential
+optimizations. While static value analysis proved difficult to apply for
+proving safety due to the dynamic nature of the memory region registers, it
+could be used to detect guaranteed out-of-bounds accesses. Another significant
+optimization would be to eliminate redundant guards by analyzing data flow to
+see if a memory location has already been verified.
+
+In conclusion, this work successfully demonstrates a practical method for
+enforcing SFI on eBPF programs. The implemented address masking provides a
+robust safety guarantee, but with specific constraints on program structure.
