@@ -96,7 +96,7 @@ sfiAlgorithm' cur_prog curr =
           newTarget
             -- If we were jumping over the current label, then we now have to
             -- take the guard into account. (Also irrelevant to use >=, as the
-            -- current l witll never be a jump anyhow.)
+            -- current l will never be a jump anyhow.)
             -- Also Also, in the case we are jumping from somewhere after, we
             -- want to update it to instead jump to the guard. This is why n ==
             -- l is included in the n <=.
@@ -134,16 +134,23 @@ instruction we have to check. The function follows the general structure:
     not we have an offset or not. Without an offset, we can save an
   instruction.}. Now all the labels that are in the guard can not be found in
   the original program, and so we are able to insert the guard list of
-  statements and sort the labeled program on the Labels to get the new program.
+  statements and sort the labeled program by the labels to get the new program.
   \item We do not want our sfi algorithm to run on these new inserted
     statements, so we update what label should be checked next to be the
     original label plus the length of the guard minus 1. This gives us the
     label that is right after the original statement in the original program.
 \end{itemize}
 
-The \texttt{newLabels} function does the majority of the work here. It both has
-to update the current label of all the statement, but it also has to update all
-jump instructions to jump to the new locations. Importantly, we want every jump
-that jumped to the original load/store instruction to now jump to the start of
-our guard, such that we always guarantee that any load adheres to the SFI
-policy.
+The \texttt{newLabels} function does the majority of the work here. It has to
+update both the current label of all the statements and all jump instructions
+to jump given these new labels. Importantly, we want every jump that jumped to
+the original load/store instruction to now jump to the start of our guard, such
+that we always guarantee that any load adheres to the SFI policy.
+
+\subsection{Validation}
+The implementation was mainly validated with manual programs and then checked
+that they produced the expected result. These manual tests included a lot of
+jump instructions that jump differently over the different load and store
+instructions to make sure that we specifically update the jumps correctly.
+
+Further, some simple tests were added for the prerequisites.

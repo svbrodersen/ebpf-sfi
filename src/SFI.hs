@@ -1,7 +1,6 @@
 module SFI where
 
 import Data.List (sortOn)
-import Debug.Trace (trace)
 import Ebpf.Asm
 import Ebpf.Display ()
 import Ebpf_cfg

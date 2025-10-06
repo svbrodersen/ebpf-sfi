@@ -7,12 +7,12 @@ are confined to designated regions - a stack space and a data region - and that
 all jumps are local to code within the program.
 
 My implementation, developed in Haskell, first performs a prerequisite check on
-the eBPF program. This static pass verifies that there is no use of reserved
-registers are not used, and that all control-flow transfers (jumps) are
-directed within the program's boundaries. Following this validation, the core
+the eBPF program. This static pass verifies that reserved registers are not
+used, and that all control-flow transfers (jumps) are directed within the
+program's boundaries. Following this validation, the core
 of my approach involves traversing the program and replacing each memory load
 and store instruction with a sequence of guard instructions. I settled on an
-address masking technique, which, despite requiring `r2` to be a power of two,
+address masking technique, which, despite requiring r2 to be a power of two,
 was chosen over a more naive approach to reduce the overhead of conditional
 jumps. This technique forces every memory access into a valid region using
 bitwise operations, with a single conditional jump to select between the stack

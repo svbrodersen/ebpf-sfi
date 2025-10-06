@@ -1,24 +1,24 @@
 \section{Introduction}\label{sec:introduction}
-The SFI policy has two main stipulates. First, any memory access must lie in
+The SFI policy has two main restrictions. First, any memory access must lie in
 either the interval of $[r1, r1 + r2)$ or $[r10, r10+512]$. Second, all
 branches must be to the code region where the eBPF code is loaded.
 
-The approach for solving the two varies significantly. The later is something
-which can be checked statically before program execution. With a single pass
-over the program, we could check every jump instruction and guarantee that it
-jumps to somewhere else in the program. For this I decided that the Call
-instruction is an instruction which violates the SFI policy, as we technically
-would execute code outside the current programs code. 
+The approach for solving these two restrictions vary significantly. The latter
+can be checked statically before program execution. With a single pass over the
+program, we could check every jump instruction and guarantee that it jumps to
+somewhere else in the program. For this I decided that the Call instruction is
+an instruction which violates the SFI policy, as we technically would execute
+code outside the current program's code. 
 
-However, the former is not something which we can conclude at by a simple check
-of the program, as we do not know the initial values of the registers. For this
-we could use a Inlined Reference Monitor Rewriter as mentioned in \cite{SFI}.
-However, as our memory region depends on the registers r1, r2 and r10, then it
-seems a logical addition to the SFI policy, that any program which updates the
-aforementioned registers violate the SFI policy. Otherwise, any program could
-simply overwrite the registers and they would have arbitrary access to memory.
-This is another prerequisite (in the same manner as the jump instruction), and
-we can check this by a single pass over the program.
+However, the former cannot be verified by a simple check of the program, as the
+initial values of the registers are unknown. For this we could use a Inlined
+Reference Monitor Rewriter as mentioned in \cite{SFI}. However, as our memory
+region depends on the registers r1, r2 and r10, then it seems a logical
+addition to the SFI policy, that any program which updates the aforementioned
+registers violate the SFI policy. Otherwise, any program could simply overwrite
+the registers and they would have arbitrary access to memory. This is another
+prerequisite (in the same manner as the jump instruction), and we can check
+this by a single pass over the program.
 
 For this project I theorized about two primary approaches, which are presented in the following sections.
 
@@ -44,10 +44,10 @@ end:
 \end{lstlisting}
 The naive approach to the SFI enforcement of data regions would be to add
 conditional jumps whenever we have a memory load/store. In
-Listing~\ref{lst:naive}a program following the syntax defined in \cite{SFI} is
+Listing~\ref{lst:naive} a program following the syntax defined in \cite{SFI} is
 presented on how this would work.
 
-This SFI enforcements work on conditional jumps, 4 in total to be exact. First,
+This SFI enforcements works on conditional jumps, 4 in total to be exact. First,
 we check if we are in the memory region of $[r10, r10 + 512)$, if we are inside
 this region, then we fall through and can update the mem(r11) region. However,
 if we are not within the region, then we check for $[r1, r1+r2)$ to see if we
@@ -57,7 +57,7 @@ would overwrite any data the user has in those registers. As such, when
 checking the prerequisites we would also have to check for the use of these two
 registers.
 
-However, as this approach uses more conditional jumps than I would like I
+However, as this approach uses more conditional jumps than I would like, I
 decided to move on from it and instead use the next approach.
 
 \subsection{Address masking}\label{sec:address}
@@ -65,8 +65,8 @@ Address masking as presented in \cite{SFI} would require that we impose
 restrictions on r1, r2 and r10. Namely we would have to impose that r2 is some
 power of two, and we have to impose that r1 fits in the upper bits of r2, i.e
 given $r2 - 1 = 0xFFF$, then r1 would have to be $r1=...000$, where ...
-indicate that we can have any values come before, and we would need the same
-requirement for r10 but in regards to $t11$. If this held, then we would be
+indicates that we can have any values come before, and we would need the same
+requirement for r10 but in regards to $511$. If this held, then we would be
 able to use $r2-1$ as the address mask, and use a binary OR to then compute the
 correct region.
 
@@ -100,9 +100,9 @@ this I require that r9 and r11 are not used as in the naive approach. This
 allows us to rewrite the previous instruction as seen in Listing~\ref{lst:mask}.
 
 This approach includes an initial statement to every program. This is the
-statement $r2 := r2 - 1$. As a prerequisite we have that r2 must be a power of
-2, and as such this instruction makes it such that r2 now contains a mask. For
-example, if we had: $0x1000$, then after this statement we would have $0xFFF$.
+statement $r2 := r2 - 1$. A prerequisite is that r2 must be a power of 2;
+therefore, this instruction converts r2 into a mask. For example, if we had:
+$0x1000$, then after this statement we would have $0xFFF$.
 
 Next, as in the naive approach, we compute the memory location into a
 designated register, r9 in this case. Then we copy the value into register r11,
@@ -113,7 +113,7 @@ important for us:
 \begin{itemize}
   \item If r9 was already in the aforementioned interval, then subtracting r10
     from r9 makes it such that r9 is instead in the interval [0, 512), the
-    following AND operation would then have no affect on r9, and we then add
+    following AND operation would then have no effect on r9, and we then add
     back r10, which leaves us with the original value.
   \item If instead r9 is outside the initial interval, then this operation
     produces some arbitrary value x, for which the next AND instruction forces
@@ -129,7 +129,7 @@ Now we guarantee that r9 has a value in the interval [r10, r10 + 512). However,
 we do not know if this is because the original value was already within this
 region or if we forced it within the region. As we saved the original value in
 r11, we must then do a conditional jump between the two registers, and if we
-see that the value was not changed, then the read already satisfied SFI policy,
+see that the value was not changed, then the read already satisfies SFI policy,
 and we execute the memory operation with r9. In the case that r9 was changed,
 then we instead do the same computation for r11, and force the memory read to
 be in the interval of [r1, r1+r2). This time we do not check if we kept the

@@ -66,7 +66,3 @@ spec = do
       let prog = programWithoutRestrictedRegister
           labeledProg = zip [0 ..] prog
       checkPrerequisites labeledProg `shouldBe` Just ()
-
-  describe "SFI Algorithm" $ do
-    it "sfiAlgorithm should correctly instrument a program" $ do
-      pendingWith "sfiAlgorithm not implemented"
